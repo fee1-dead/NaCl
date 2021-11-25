@@ -1,0 +1,11 @@
+[target.'cfg(target_os = "none")']
+runner = "cargo run --package sfos_boot --"
+
+
+[alias]
+kc = "kcheck"
+kcheck = "check --target x86_64-unknown-none.json -Zbuild-std=core,alloc"
+kb = "kbuild"
+kbuild = "build --target x86_64-unknown-none.json -Zbuild-std=core,alloc"
+kimage = "run --target x86_64-unknown-none.json -Zbuild-std=core,alloc -- --no-run"
+krun = "run --target x86_64-unknown-none.json -Zbuild-std=core,alloc"
