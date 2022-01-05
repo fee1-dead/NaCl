@@ -1,16 +1,16 @@
 use core::ptr::NonNull;
 
-use acpi::sdt::Signature;
+
 use acpi::{InterruptModel, PlatformInfo};
-use bootloader::BootInfo;
+
 use pic8259::ChainedPics;
-use raw_cpuid::FeatureInfo;
-use x86_64::instructions::port::Port;
-use x86_64::registers::model_specific::Msr;
+
+
+
 
 use crate::interrupts::{InterruptIndex, PIC_1_OFFSET, PIC_2_OFFSET};
 use crate::memory::mapper::Mapper;
-use crate::{println, sprintln};
+use crate::{sprintln};
 
 static mut LAPIC: Option<Lapic> = None;
 

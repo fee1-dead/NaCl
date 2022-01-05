@@ -6,7 +6,7 @@ use x86_64::structures::idt::{
 };
 
 use crate::apic::lapic;
-use crate::{hlt_loop, print, sprint, sprintln};
+use crate::{hlt_loop, print, sprintln};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
