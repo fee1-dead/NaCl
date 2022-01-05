@@ -1,4 +1,5 @@
 pub mod allocator;
+pub mod mapper;
 
 use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB};
@@ -23,6 +24,10 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 }
 
 /// Initialize the heap.
+///
+/// # SAFETY
+///
+/// the physical memory offset must be valid.
 pub unsafe fn init(physical_memory_offset: VirtAddr, memory_regions: &'static MemoryRegions) {
     let level_4_table = active_level_4_table(physical_memory_offset);
     let mut page_table = OffsetPageTable::new(level_4_table, physical_memory_offset);

@@ -26,15 +26,16 @@ fn main() {
         return;
     }
 
+    let cpus = num_cpus::get();
+
     let mut run_cmd = Command::new("qemu-system-x86_64");
     run_cmd
         .arg("-drive")
         .arg(format!("format=raw,file={}", bios.display()))
         .arg("-serial")
         .arg("stdio")
-        .arg("-cpu")
-        .arg("host")
-        .arg("-enable-kvm");
+        .arg("-smp")
+        .arg(cpus.to_string());
     run_cmd.args(RUN_ARGS);
 
     let exit_status = run_cmd.status().unwrap();

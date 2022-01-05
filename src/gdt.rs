@@ -1,5 +1,4 @@
 use lazy_static::lazy_static;
-use x86_64::instructions::segmentation::Segment;
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
@@ -14,8 +13,8 @@ lazy_static! {
             static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
             let stack_start = VirtAddr::from_ptr(unsafe { &STACK });
-            let stack_end = stack_start + STACK_SIZE;
-            stack_end
+
+            stack_start + STACK_SIZE
         };
         tss
     };
@@ -42,11 +41,15 @@ struct Selectors {
 }
 
 pub fn init() {
-    use x86_64::instructions::segmentation::CS;
+    use x86_64::instructions::segmentation::{Segment, CS};
     use x86_64::instructions::tables::load_tss;
+    use x86_64::registers::segmentation::{DS, SS};
     GDT.0.load();
     unsafe {
         CS::set_reg(GDT.1.code_selector);
+        // https://github.com/rust-osdev/bootloader/issues/190
+        SS::set_reg(SegmentSelector(0));
+        DS::set_reg(SegmentSelector(0));
         load_tss(GDT.1.tss_selector);
     }
 }

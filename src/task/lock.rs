@@ -2,25 +2,34 @@ use core::cell::UnsafeCell;
 use core::future::Future;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
-use core::task::{Poll, Waker};
+use core::task::Poll;
+
+use futures_util::task::AtomicWaker;
 
 pub struct Mutex<T> {
-    locked: AtomicBool,
     inner: UnsafeCell<T>,
+    locked: AtomicBool,
+    waker: AtomicWaker,
 }
 
 unsafe impl<T: Sync> Sync for Mutex<T> {}
 unsafe impl<T: Send> Send for Mutex<T> {}
 
 pub struct MutexGuard<'a, T> {
-    waker: Option<Waker>,
-    locked: &'a AtomicBool,
     inner: &'a mut T,
+    locked: &'a AtomicBool,
+    waker: &'a AtomicWaker,
 }
 
 pub struct MutexLockFuture<'a, T> {
-    locked: &'a AtomicBool,
     inner: &'a UnsafeCell<T>,
+    locked: &'a AtomicBool,
+    waker: &'a AtomicWaker,
+}
+
+/// Check whether the lock is currently locked. Returns `Ok` on success and the lock is locked
+fn check(locked: &AtomicBool) -> Result<bool, bool> {
+    locked.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
 }
 
 impl<'a, T> Future for MutexLockFuture<'a, T> {
@@ -30,10 +39,25 @@ impl<'a, T> Future for MutexLockFuture<'a, T> {
         self: core::pin::Pin<&mut Self>,
         cx: &mut core::task::Context<'_>,
     ) -> Poll<Self::Output> {
-        let Self { locked, inner } = self.get_mut();
-        if let Ok(_) = locked.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed) {
+        let Self {
+            locked,
+            inner,
+            waker,
+        } = self.get_mut();
+
+        // Fast path. Avoid registering this task's waker.
+        if check(locked).is_ok() {
+            return Poll::Ready(MutexGuard {
+                waker: *waker,
+                locked: *locked,
+                inner: unsafe { &mut *inner.get() },
+            });
+        }
+
+        waker.register(cx.waker());
+        if check(locked).is_ok() {
             Poll::Ready(MutexGuard {
-                waker: Some(cx.waker().clone()),
+                waker: *waker,
                 locked: *locked,
                 inner: unsafe { &mut *inner.get() },
             })
@@ -43,11 +67,14 @@ impl<'a, T> Future for MutexLockFuture<'a, T> {
     }
 }
 
+static NEW_WAKER: AtomicWaker = AtomicWaker::new();
+
 impl<T> Mutex<T> {
     pub const fn new(value: T) -> Self {
         Self {
             locked: AtomicBool::new(false),
             inner: UnsafeCell::new(value),
+            waker: AtomicWaker::new(),
         }
     }
 
@@ -55,16 +82,24 @@ impl<T> Mutex<T> {
         MutexLockFuture {
             locked: &self.locked,
             inner: &self.inner,
+            waker: &self.waker,
+        }
+    }
+
+    pub fn lock_or_spin(&self) -> MutexGuard<'_, T> {
+        while check(&self.locked).is_err() {}
+
+        MutexGuard {
+            waker: &NEW_WAKER,
+            locked: &self.locked,
+            inner: unsafe { &mut *self.inner.get() },
         }
     }
 
     pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
-        if let Ok(_) =
-            self.locked
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        {
+        if check(&self.locked).is_ok() {
             Some(MutexGuard {
-                waker: None,
+                waker: &NEW_WAKER,
                 locked: &self.locked,
                 inner: unsafe { &mut *self.inner.get() },
             })
@@ -77,9 +112,7 @@ impl<T> Mutex<T> {
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
         self.locked.store(false, Ordering::Release);
-        if let Some(w) = self.waker.take() {
-            w.wake()
-        }
+        self.waker.wake();
     }
 }
 

@@ -1,7 +1,12 @@
-use lazy_static::lazy_static;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use core::ops::{Index, IndexMut};
 
-use crate::{hlt_loop, sprintln};
+use lazy_static::lazy_static;
+use x86_64::structures::idt::{
+    Entry, HandlerFunc, InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode,
+};
+
+use crate::apic::lapic;
+use crate::{hlt_loop, print, sprint, sprintln};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -12,6 +17,7 @@ lazy_static! {
             options.set_stack_index(crate::gdt::DOUBLE_FAULT_IST_INDEX);
         }
         idt.page_fault.set_handler_fn(page_fault_handler);
+        idt[InterruptIndex::Timer].set_handler_fn(timer_interrupt_handler);
         idt
     };
 }
@@ -42,4 +48,47 @@ extern "x86-interrupt" fn page_fault_handler(
     sprintln!("Error Code: {:?}", error_code);
     sprintln!("{:#?}", stack_frame);
     hlt_loop();
+}
+
+extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    print!(".");
+    unsafe {
+        lapic().end_of_interrupt();
+    }
+}
+
+pub const PIC_1_OFFSET: u8 = 32;
+pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+pub enum InterruptIndex {
+    Timer = PIC_1_OFFSET,
+}
+
+impl InterruptIndex {
+    #[inline]
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+
+    #[inline]
+    pub fn as_usize(&self) -> usize {
+        usize::from(self.as_u8())
+    }
+}
+
+impl Index<InterruptIndex> for InterruptDescriptorTable {
+    type Output = Entry<HandlerFunc>;
+    #[inline]
+    fn index(&self, index: InterruptIndex) -> &Self::Output {
+        &self[index.as_usize()]
+    }
+}
+
+impl IndexMut<InterruptIndex> for InterruptDescriptorTable {
+    #[inline]
+    fn index_mut(&mut self, index: InterruptIndex) -> &mut Self::Output {
+        &mut self[index.as_usize()]
+    }
 }

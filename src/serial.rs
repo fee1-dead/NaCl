@@ -1,7 +1,7 @@
-use core::lazy::Lazy;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::AtomicBool;
 
 use uart_16550::SerialPort;
+use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::task::lock::{Mutex, MutexGuard};
 
@@ -10,20 +10,25 @@ static INIT: AtomicBool = AtomicBool::new(false);
 
 fn serial1() -> MutexGuard<'static, SerialPort> {
     if !INIT.swap(true, core::sync::atomic::Ordering::Relaxed) {
-        let mut guard = SERIAL1.try_lock().unwrap();
+        let mut guard = SERIAL1.lock_or_spin();
         guard.init();
         guard
     } else {
-        SERIAL1.try_lock().unwrap()
+        SERIAL1.lock_or_spin()
     }
 }
 
 #[doc(hidden)]
 pub fn _print(args: ::core::fmt::Arguments) {
     use core::fmt::Write;
-    serial1()
-        .write_fmt(args)
-        .expect("Printing to serial failed");
+
+    // avoid deadlocks by disabling interrupts before aquiring the lock,
+    // enabling interrupts after lock is released.
+    without_interrupts(|| {
+        serial1()
+            .write_fmt(args)
+            .expect("Printing to serial failed");
+    })
 }
 
 /// Prints to the host through the serial interface.
@@ -38,7 +43,8 @@ macro_rules! sprint {
 #[macro_export]
 macro_rules! sprintln {
     () => ($crate::sprint!("\n"));
-    ($fmt:expr) => ($crate::sprint!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => ($crate::sprint!(
-        concat!($fmt, "\n"), $($arg)*));
+    ($fmt:expr) => ($crate::serial::_print(format_args_nl!($fmt)));
+    ($fmt:expr, $($arg:tt)*) => ($crate::serial::_print(
+        format_args_nl!($fmt, $($arg)*)
+    ));
 }

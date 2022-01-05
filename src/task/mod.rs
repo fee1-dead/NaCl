@@ -34,3 +34,32 @@ impl Task {
         self.future.as_mut().poll(context)
     }
 }
+
+#[derive(Default)]
+pub struct Yield(bool);
+
+impl Future for Yield {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        let b = &mut self.get_mut().0;
+        if *b {
+            Poll::Ready(())
+        } else {
+            *b = true;
+            Poll::Pending
+        }
+    }
+}
+
+/// Call in an async function to yield execution back to the executor.
+pub macro ayield() {{
+    <$crate::task::Yield as ::core::default::Default>::default().await;
+}}
+
+/*
+pub fn block_on<F: Future>(mut fut: F) -> F::Output {
+    let pin = unsafe { Pin::new_unchecked(&mut fut) };
+    loop {
+        pin.poll(cx)
+    }
+}*/
