@@ -1,13 +1,11 @@
 use alloc::boxed::Box;
 use alloc::vec;
 
-
 use bootloader::boot_info::FrameBuffer;
 use hashbrown::HashMap;
 use x86_64::instructions::interrupts::without_interrupts;
 
-
-use crate::task::lock::{Mutex};
+use crate::task::lock::Mutex;
 
 static FT: &[u8] = include_bytes!("ter-u20n.psf");
 

@@ -1,44 +1,59 @@
 use core::ptr::NonNull;
 
-
 use acpi::{InterruptModel, PlatformInfo};
-
 use pic8259::ChainedPics;
 
-
-
-
-use crate::interrupts::{InterruptIndex, PIC_1_OFFSET, PIC_2_OFFSET};
+use super::interrupts::{InterruptIndex, PIC_1_OFFSET, PIC_2_OFFSET};
 use crate::memory::mapper::Mapper;
-use crate::{sprintln};
+use crate::sprintln;
 
 static mut LAPIC: Option<Lapic> = None;
 
 pub fn lapic() -> Lapic {
-    unsafe { LAPIC.expect("lapic is uninitialized") }
+    unsafe { LAPIC.unwrap_unchecked() }
 }
 
 macro_rules! common_apic_methods {
     ($offset:ident) => {
         #[inline]
-        pub unsafe fn read_register(&self, offset: $offset) -> u32 {
+        pub unsafe fn read_register(&mut self, offset: $offset) -> u32 {
             self.register_at(offset).read_volatile()
         }
 
         #[inline]
-        pub unsafe fn write_register(&self, offset: $offset, value: u32) {
+        pub unsafe fn write_register(&mut self, offset: $offset, value: u32) {
             self.register_at(offset).write_volatile(value);
         }
 
         #[inline]
-        pub unsafe fn update_register<F>(&self, offset: $offset, f: F)
+        pub unsafe fn update_register<F>(&mut self, offset: $offset, f: F)
         where
             F: FnOnce(u32) -> u32,
         {
-            self.write_register(offset, f(self.read_register(offset)));
+            let reg = self.read_register(offset);
+            self.write_register(offset, f(reg));
         }
     };
 }
+pub const APIC_TIMER_PERIODIC: u32 = 0x20000;
+pub const APIC_MASKED: u32 = 0x10000;
+
+////////////////////////////////////
+// REGISTERS
+
+/// The local vector table for LAPIC timer.
+///
+/// See LVT format at https://wiki.osdev.org/APIC#Local_Vector_Table_Registers
+pub const LAPIC_TIMER_LVT_REG: usize = 0x320;
+
+/// The initial count of the timer.
+pub const LAPIC_TIMER_INITCNT_REG: usize = 0x380;
+
+/// The current count of the timer.
+pub const LAPIC_TIMER_CURRCNT_REG: usize = 0x390;
+
+/// The divider of the timer.
+pub const LAPIC_TIMER_DIV_REG: usize = 0x3E0;
 
 /// Local APIC.
 #[derive(Clone, Copy)]
@@ -49,12 +64,12 @@ pub struct Lapic {
 
 impl Lapic {
     #[inline]
-    pub unsafe fn end_of_interrupt(&self) {
+    pub unsafe fn end_of_interrupt(&mut self) {
         self.write_register(0xB0, 0);
     }
 
     #[inline]
-    pub unsafe fn register_at(&self, offset: usize) -> *mut u32 {
+    pub unsafe fn register_at(&mut self, offset: usize) -> *mut u32 {
         self.start_ptr.as_ptr().add(offset).cast()
     }
 
@@ -69,7 +84,7 @@ pub struct IoApic {
 }
 
 impl IoApic {
-    pub unsafe fn register_at(&self, offset: u8) -> *mut u32 {
+    pub unsafe fn register_at(&mut self, offset: u8) -> *mut u32 {
         // tell IOREGSEL where we want to write to
         self.start_ptr
             .as_ptr()
@@ -105,7 +120,7 @@ pub fn init_lapic(platform_info: &PlatformInfo, mapper: &Mapper) {
     let lapic_addr = apic.local_apic_address;
 
     let start_ptr = mapper.phys_to_virt_ptr(lapic_addr as usize);
-    let lapic = Lapic { start_ptr };
+    let mut lapic = Lapic { start_ptr };
 
     // Set the Spurious Interrupt Vector Register bit 8 to start receiving interrupts.
     unsafe {
@@ -118,7 +133,9 @@ pub fn init_lapic(platform_info: &PlatformInfo, mapper: &Mapper) {
 }
 
 /// Initialize the I/O APIC to enable PIT interrupts.
-pub fn init_ioapic(platform_info: &PlatformInfo, mapper: &Mapper) {
+///
+/// Returns the I/O APIC wit the PIT register.
+pub fn init_ioapic(platform_info: &PlatformInfo, mapper: &Mapper) -> (IoApic, u8) {
     let apic = match &platform_info.interrupt_model {
         InterruptModel::Apic(apic) => apic,
         _ => panic!("unknown interrupt model"),
@@ -133,12 +150,12 @@ pub fn init_ioapic(platform_info: &PlatformInfo, mapper: &Mapper) {
     let overriden_index = pit.global_system_interrupt;
 
     // find the I/O APIC that handles IRQ0.
-
+    let mut found_reg = None;
     for io_apic in &apic.io_apics {
         let address = io_apic.address;
         let base = io_apic.global_system_interrupt_base;
 
-        let ioapic = IoApic {
+        let mut ioapic = IoApic {
             start_ptr: mapper.phys_to_virt_ptr(address as usize),
         };
 
@@ -172,6 +189,8 @@ pub fn init_ioapic(platform_info: &PlatformInfo, mapper: &Mapper) {
                 unsafe {
                     ioapic.write_register(reg + 1, bsp_acpi_id);
                 }
+
+                found_reg = Some((ioapic, reg));
             } else {
                 // Per https://wiki.osdev.org/APIC#IO_APIC_Registers, set the "masked" flag
                 // of other redir entries
@@ -179,4 +198,6 @@ pub fn init_ioapic(platform_info: &PlatformInfo, mapper: &Mapper) {
             }
         }
     }
+
+    found_reg.expect("could not find redirected PIT IRQ")
 }

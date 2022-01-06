@@ -1,3 +1,4 @@
+use core::num::Wrapping;
 use core::ops::{Index, IndexMut};
 
 use lazy_static::lazy_static;
@@ -5,8 +6,9 @@ use x86_64::structures::idt::{
     Entry, HandlerFunc, InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode,
 };
 
-use crate::apic::lapic;
-use crate::{hlt_loop, print, sprintln};
+use super::apic::lapic;
+use crate::cores::{cpu_enter};
+use crate::{hlt_loop, sprintln};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -14,10 +16,11 @@ lazy_static! {
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         let options = idt.double_fault.set_handler_fn(double_fault_handler);
         unsafe {
-            options.set_stack_index(crate::gdt::DOUBLE_FAULT_IST_INDEX);
+            options.set_stack_index(super::gdt::DOUBLE_FAULT_IST_INDEX);
         }
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt[InterruptIndex::Timer].set_handler_fn(timer_interrupt_handler);
+        idt[InterruptIndex::ScratchTimer].set_handler_fn(scratch_timer_interrupt_handler);
         idt
     };
 }
@@ -51,8 +54,23 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    print!(".");
+    cpu_enter(|cpu| {
+        cpu.timer += Wrapping(1);
+    });
+
     unsafe {
+        lapic().end_of_interrupt();
+    }
+}
+
+/// The scratch timer is used when calibrating two clocks that both use IRQs
+///
+/// It is only available to the bootstrap processor.
+pub(super) static mut SCRATCH_TIMER: usize = 0;
+
+extern "x86-interrupt" fn scratch_timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    unsafe {
+        SCRATCH_TIMER = SCRATCH_TIMER.wrapping_add(1);
         lapic().end_of_interrupt();
     }
 }
@@ -63,7 +81,8 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 #[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum InterruptIndex {
-    Timer = PIC_1_OFFSET,
+    Timer = 32,
+    ScratchTimer = 33,
 }
 
 impl InterruptIndex {

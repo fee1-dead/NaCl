@@ -1,5 +1,6 @@
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
+#![feature(array_from_fn)]
 #![feature(bigint_helper_methods)]
 #![feature(decl_macro)]
 #![feature(format_args_nl)]
@@ -11,11 +12,9 @@
 
 extern crate alloc;
 
-pub mod acpi;
-pub mod apic;
+pub mod arch;
+pub mod cores;
 pub mod font;
-pub mod gdt;
-pub mod interrupts;
 pub mod memory;
 pub mod serial;
 pub mod task;
@@ -28,7 +27,6 @@ use bootloader::{entry_point, BootInfo};
 use x86_64::VirtAddr;
 
 use crate::font::FrameBufferManager;
-use crate::memory::mapper::Mapper;
 
 entry_point!(kernel_main);
 
@@ -42,9 +40,6 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 }
 
 fn init(boot_info: &'static mut BootInfo) {
-    gdt::init();
-    interrupts::init_idt();
-
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
     // SAFETY: provided via boot_info, so it is correct
     unsafe {
@@ -56,14 +51,9 @@ fn init(boot_info: &'static mut BootInfo) {
     let fb = FrameBufferManager::new(frame_buffer.into_option().unwrap());
     font::insert_fbman(fb);
 
-    let mapper = Mapper::new(boot_info);
-    let tables = acpi::get_acpi_tables(boot_info, mapper);
-    let platform_info = acpi::get_platform_info(&tables);
-    apic::init_and_disable_old_pic();
-    apic::init_lapic(&platform_info, &mapper);
-    apic::init_ioapic(&platform_info, &mapper);
-
-    x86_64::instructions::interrupts::enable();
+    // initialize per-core memory access.
+    crate::cores::init();
+    crate::arch::init(boot_info);
 }
 
 #[panic_handler]
