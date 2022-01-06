@@ -7,7 +7,7 @@ use x86_64::structures::idt::{
 };
 
 use super::apic::lapic;
-use crate::cores::{cpu_enter};
+use crate::cores::cpu_enter;
 use crate::{hlt_loop, sprintln};
 
 lazy_static! {

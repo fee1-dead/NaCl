@@ -57,8 +57,5 @@ pub fn cpu_enter<F: FnOnce(&mut Cpu) -> T, T>(f: F) -> T {
 
 pub fn get_cpu<'a>(key: &CpuKey<'a>) -> &'a mut Cpu {
     // SAFETY: the key guarantees unique access of the CPU.
-    unsafe {
-        &mut CPUS.as_mut().unwrap()[key.num as usize]
-    }
+    unsafe { &mut CPUS.as_mut().unwrap()[key.num as usize] }
 }
-

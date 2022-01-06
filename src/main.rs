@@ -21,11 +21,13 @@ pub mod task;
 
 use core::mem;
 use core::panic::PanicInfo;
+use core::time::Duration;
 
 use bootloader::boot_info::Optional;
 use bootloader::{entry_point, BootInfo};
 use x86_64::VirtAddr;
 
+use crate::arch::delay;
 use crate::font::FrameBufferManager;
 
 entry_point!(kernel_main);
@@ -36,7 +38,10 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     println!("sfOS v{}", env!("CARGO_PKG_VERSION"));
     println!("Ayo");
 
-    hlt_loop()
+    loop {
+        delay(Duration::from_secs(1));
+        println!("SEC!");
+    }
 }
 
 fn init(boot_info: &'static mut BootInfo) {

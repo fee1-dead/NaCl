@@ -9,6 +9,9 @@ mod gdt;
 mod interrupts;
 mod time;
 
+pub use time::delay;
+pub use time::udelay;
+
 pub fn init(boot_info: &'static BootInfo) {
     gdt::init();
     interrupts::init_idt();
@@ -29,5 +32,8 @@ pub fn id() -> u8 {
     // N.B. some processor specific models allow changin the LAPIC ID.
     // initial lapic id is immutable and thus suitable for a unique identifier
     // for processors.
-    CpuId::new().get_feature_info().unwrap().initial_local_apic_id()
+    CpuId::new()
+        .get_feature_info()
+        .unwrap()
+        .initial_local_apic_id()
 }

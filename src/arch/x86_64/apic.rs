@@ -44,7 +44,11 @@ pub const APIC_MASKED: u32 = 0x10000;
 /// The local vector table for LAPIC timer.
 ///
 /// See LVT format at https://wiki.osdev.org/APIC#Local_Vector_Table_Registers
-pub const LAPIC_TIMER_LVT_REG: usize = 0x320;
+pub const LAPIC_LVT_TIMER_REG: usize = 0x320;
+
+pub const LAPIC_LVT_LINT0_REG: usize = 0x350;
+
+pub const LAPIC_LVT_LINT1_REG: usize = 0x360;
 
 /// The initial count of the timer.
 pub const LAPIC_TIMER_INITCNT_REG: usize = 0x380;
@@ -125,6 +129,12 @@ pub fn init_lapic(platform_info: &PlatformInfo, mapper: &Mapper) {
     // Set the Spurious Interrupt Vector Register bit 8 to start receiving interrupts.
     unsafe {
         lapic.update_register(0xF0, |reg| reg | 0x100);
+    }
+
+    unsafe {
+        for reg in [LAPIC_LVT_TIMER_REG, LAPIC_LVT_LINT0_REG, LAPIC_LVT_LINT1_REG] {
+            lapic.write_register(reg, APIC_MASKED);
+        }
     }
 
     unsafe {
