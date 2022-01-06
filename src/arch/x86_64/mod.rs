@@ -7,10 +7,12 @@ mod acpi;
 mod apic;
 mod gdt;
 mod interrupts;
+mod smp;
 mod time;
 
 pub use time::delay;
-pub use time::udelay;
+
+pub use smp::ap_init;
 
 pub fn init(boot_info: &'static BootInfo) {
     gdt::init();

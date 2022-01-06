@@ -4,8 +4,10 @@
 #![feature(bigint_helper_methods)]
 #![feature(decl_macro)]
 #![feature(format_args_nl)]
+#![feature(fn_align)]
 #![feature(once_cell)]
 #![feature(type_alias_impl_trait)]
+#![feature(naked_functions)]
 #![no_std]
 #![no_main]
 #![allow(clippy::missing_safety_doc)] // TODO remove this later
