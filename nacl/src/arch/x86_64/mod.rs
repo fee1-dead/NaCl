@@ -16,12 +16,12 @@ pub use time::delay;
 use self::memory::mapper::Mapper;
 use crate::hlt_loop;
 
-pub extern "C" fn start(boot_info: &'static StivaleStruct) -> ! {
+pub extern "C" fn start(boot_info: &'static mut StivaleStruct) -> ! {
     init(boot_info);
     hlt_loop();
 }
 
-pub fn init(boot_info: &'static StivaleStruct) {
+pub fn init(boot_info: &'static mut StivaleStruct) {
     gdt::init();
     interrupts::init_idt();
 
@@ -32,7 +32,7 @@ pub fn init(boot_info: &'static StivaleStruct) {
     apic::init_lapic(&platform_info, &mapper);
     let (ioapic, pitreg) = apic::init_ioapic(&platform_info, &mapper);
     time::init(ioapic, pitreg);
-    // smp::init(&platform_info);
+    smp::init(&platform_info, boot_info);
 
     x86_64::instructions::interrupts::enable();
 }

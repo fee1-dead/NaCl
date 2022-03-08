@@ -1,11 +1,13 @@
 //! Simultanous multi processing.
 
 use core::arch::{asm, global_asm};
-use core::ptr::addr_of;
-use core::sync::atomic::{AtomicU16, AtomicUsize};
+use core::ptr::{addr_of, addr_of_mut};
+use core::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 
 use acpi::platform::ProcessorState;
 use acpi::PlatformInfo;
+use alloc::boxed::Box;
+use stivale_boot::v2::{StivaleStruct, StivaleSmpInfo};
 use x86_64::structures::gdt::{Descriptor, DescriptorFlags, GlobalDescriptorTable};
 use x86_64::structures::idt::InterruptDescriptorTable;
 use x86_64::structures::paging::mapper::PageTableFrameMapping;
@@ -50,7 +52,7 @@ pub struct DtPointer {
 }
 
 #[no_mangle]
-static AP_STARTED: AtomicU16 = AtomicU16::new(0);
+static AP_STARTED: AtomicU16 = AtomicU16::new(1);
 
 /// Empty IDT
 static IDT: DtPointer = DtPointer { limit: 0, base: 0 };
@@ -72,7 +74,7 @@ static mut GDTPTR: DtPointer = DtPointer {
 /*
 global_asm!(include_str!("ap_init.asm"));
 global_asm!(include_str!("ap_init_long.asm"));
-*/
+
 
 /// initialize application processor.
 ///
@@ -85,15 +87,26 @@ global_asm!(include_str!("ap_init_long.asm"));
 #[repr(align(0x8000))]
 pub unsafe extern "C" fn ap_init_trampoline() -> ! {
     asm!("5: jmp 5b", options(noreturn));
-}
+}*/
 
 #[no_mangle]
-pub extern "C" fn ap_init() -> ! {
-    println!("Hello from AP {}!", id());
+pub extern "C" fn ap_init(stivale_smp_info: &'static StivaleSmpInfo) -> ! {
+    let prev = AP_STARTED.fetch_add(1, Ordering::Relaxed);
+    println!("Hello from AP {}! There are {prev} cpus behind me", id());
     hlt_loop()
 }
 
-pub fn init(platform_info: &PlatformInfo) {
+pub fn init(platform_info: &PlatformInfo, stivale_struct: &'static mut StivaleStruct) {
+    // safe: this is harmless
+    let smps = unsafe { stivale_struct.smp_mut().unwrap().as_slice_mut() };
+    for smp in smps {
+        let stack = Box::leak(Box::new([0u8; 1024]));
+        unsafe {
+            addr_of_mut!(smp.target_stack).write_volatile(stack.as_mut_ptr() as usize as u64);
+            addr_of_mut!(smp.goto_address).write_volatile(ap_init as usize as u64);
+        }
+    }
+    /*
     let procinfo = platform_info
         .processor_info
         .as_ref()
@@ -151,5 +164,5 @@ pub fn init(platform_info: &PlatformInfo) {
             // TODO(COMPAT): OSDev wiki updates the register instead of writing
             lapic.write_register(0x300, mode << 8 | trampoline_addr as u32 >> 12);
         }
-    }
+    }*/
 }

@@ -30,8 +30,8 @@ use core::panic::PanicInfo;
 use core::time::Duration;
 
 use stivale_boot::v2::{
-    Stivale5LevelPagingHeaderTag, StivaleFramebufferHeaderTag, StivaleHeader, StivaleStruct,
-    StivaleUnmapNullHeaderTag,
+    Stivale5LevelPagingHeaderTag, StivaleFramebufferHeaderTag, StivaleHeader, StivaleSmpHeaderTag,
+    StivaleStruct, StivaleUnmapNullHeaderTag,
 };
 use x86_64::structures::gdt::DescriptorFlags;
 use x86_64::VirtAddr;
@@ -51,13 +51,17 @@ static STACK: PageAligned<[u8; STACK_SIZE]> = PageAligned([0; STACK_SIZE]);
 #[link_section = ".stivale2hdr"]
 #[used]
 pub static HEADER: StivaleHeader = StivaleHeader::new()
-    .entry_point(kernel_start)
+//    .entry_point(kernel_start)
+// "How to write a library that only works with your own intended usage"
+// TODO fork the library and make it work with this
     .stack(STACK.0.as_ptr())
     .tags({
         macro t($NAME:ident) {{
             &$NAME as *const _ as *const ()
         }}
-        static UNMAP_NULL: StivaleUnmapNullHeaderTag = StivaleUnmapNullHeaderTag::new();
+        static SMP: StivaleSmpHeaderTag = StivaleSmpHeaderTag::new();
+        static UNMAP_NULL: StivaleUnmapNullHeaderTag =
+            StivaleUnmapNullHeaderTag::new().next(t!(SMP));
         static LEVEL_5_PAGING: Stivale5LevelPagingHeaderTag =
             Stivale5LevelPagingHeaderTag::new().next(t!(UNMAP_NULL));
         static FRAMEBUFFER: StivaleFramebufferHeaderTag =
@@ -67,7 +71,7 @@ pub static HEADER: StivaleHeader = StivaleHeader::new()
     });
 
 #[no_mangle]
-pub extern "C" fn kernel_start(boot_info: &'static StivaleStruct) -> ! {
+pub extern "C" fn kernel_start(boot_info: &'static mut StivaleStruct) -> ! {
     init(boot_info);
 
     sprintln!("ok");
@@ -81,7 +85,7 @@ pub extern "C" fn kernel_start(boot_info: &'static StivaleStruct) -> ! {
     }
 }
 
-fn init(boot_info: &'static StivaleStruct) {
+fn init(boot_info: &'static mut StivaleStruct) {
     let phys_mem_offset = VirtAddr::new(boot_info.vmap().expect("expected vmap tag").address);
     // SAFETY: provided via boot_info, so it is correct
     unsafe {
