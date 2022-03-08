@@ -1,20 +1,27 @@
-use bootloader::BootInfo;
 use raw_cpuid::CpuId;
-
-use crate::memory::mapper::Mapper;
+use stivale_boot::v2::StivaleStruct;
 
 mod acpi;
 mod apic;
+mod boot;
 mod gdt;
 mod interrupts;
+mod memory;
 mod smp;
 mod time;
 
+pub use memory::init as memory_init;
 pub use time::delay;
 
-pub use smp::ap_init;
+use self::memory::mapper::Mapper;
+use crate::hlt_loop;
 
-pub fn init(boot_info: &'static BootInfo) {
+pub extern "C" fn start(boot_info: &'static StivaleStruct) -> ! {
+    init(boot_info);
+    hlt_loop();
+}
+
+pub fn init(boot_info: &'static StivaleStruct) {
     gdt::init();
     interrupts::init_idt();
 
@@ -25,6 +32,7 @@ pub fn init(boot_info: &'static BootInfo) {
     apic::init_lapic(&platform_info, &mapper);
     let (ioapic, pitreg) = apic::init_ioapic(&platform_info, &mapper);
     time::init(ioapic, pitreg);
+    // smp::init(&platform_info);
 
     x86_64::instructions::interrupts::enable();
 }

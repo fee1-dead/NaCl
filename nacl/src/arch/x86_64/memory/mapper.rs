@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use bootloader::BootInfo;
+use stivale_boot::v2::StivaleStruct;
 
 #[derive(Clone, Copy)]
 pub struct Mapper {
@@ -9,12 +9,9 @@ pub struct Mapper {
 
 impl Mapper {
     #[inline]
-    pub fn new(boot_info: &BootInfo) -> Self {
+    pub fn new(boot_info: &StivaleStruct) -> Self {
         Self {
-            physical_memory_offset: (*boot_info
-                .physical_memory_offset
-                .as_ref()
-                .expect("expected physmemoff")) as usize,
+            physical_memory_offset: boot_info.vmap().unwrap().address as usize,
         }
     }
 

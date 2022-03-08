@@ -1,7 +1,7 @@
 pub mod allocator;
 pub mod mapper;
 
-use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
+use stivale_boot::v2::{StivaleMemoryMapEntry, StivaleMemoryMapEntryType, StivaleMemoryMapTag};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -28,7 +28,7 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 /// # SAFETY
 ///
 /// the physical memory offset must be valid.
-pub unsafe fn init(physical_memory_offset: VirtAddr, memory_regions: &'static MemoryRegions) {
+pub unsafe fn init(physical_memory_offset: VirtAddr, memory_regions: &'static StivaleMemoryMapTag) {
     let level_4_table = active_level_4_table(physical_memory_offset);
     let mut page_table = OffsetPageTable::new(level_4_table, physical_memory_offset);
     let mut frame_allocator = BootInfoFrameAllocator::init(memory_regions);
@@ -44,13 +44,13 @@ pub struct BootInfoFrameAllocator {
 }
 
 impl BootInfoFrameAllocator {
-    fn usable_frames(regions: &'static MemoryRegions) -> UsableFrames {
+    fn usable_frames(regions: &'static StivaleMemoryMapTag) -> UsableFrames {
         regions
             .iter()
             // find usable regions
-            .filter(|r| r.kind == MemoryRegionKind::Usable)
+            .filter(|r| r.entry_type == StivaleMemoryMapEntryType::Usable)
             // map each region to its address range
-            .map(|r| r.start..r.end)
+            .map(|r| r.base..r.end_address())
             // transform to an iterator of frame start address with alignment of 4KiB.
             .flat_map(|r| r.step_by(4096))
             // create `PhysFrame` types from the start addresses.
@@ -62,7 +62,7 @@ impl BootInfoFrameAllocator {
     /// This function is unsafe because the caller must guarantee that the passed
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
-    pub unsafe fn init(regions: &'static MemoryRegions) -> Self {
+    pub unsafe fn init(regions: &'static StivaleMemoryMapTag) -> Self {
         BootInfoFrameAllocator {
             frames: Self::usable_frames(regions),
         }

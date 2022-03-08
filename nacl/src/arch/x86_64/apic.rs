@@ -1,14 +1,16 @@
+use core::hint::spin_loop;
 use core::ptr::NonNull;
 
 use acpi::{InterruptModel, PlatformInfo};
 use pic8259::ChainedPics;
 
 use super::interrupts::{InterruptIndex, PIC_1_OFFSET, PIC_2_OFFSET};
-use crate::memory::mapper::Mapper;
+use super::memory::mapper::Mapper;
 use crate::sprintln;
 
 static mut LAPIC: Option<Lapic> = None;
 
+/// TODO avoid concurrent read/writes
 pub fn lapic() -> Lapic {
     unsafe { LAPIC.unwrap_unchecked() }
 }
@@ -77,6 +79,12 @@ impl Lapic {
         self.start_ptr.as_ptr().add(offset).cast()
     }
 
+    pub unsafe fn icr_wait_for_delivery(&mut self) {
+        while self.read_register(0x300) & (1 << 12) != 0 {
+            spin_loop()
+        }
+    }
+
     common_apic_methods!(usize);
 }
 
@@ -132,7 +140,11 @@ pub fn init_lapic(platform_info: &PlatformInfo, mapper: &Mapper) {
     }
 
     unsafe {
-        for reg in [LAPIC_LVT_TIMER_REG, LAPIC_LVT_LINT0_REG, LAPIC_LVT_LINT1_REG] {
+        for reg in [
+            LAPIC_LVT_TIMER_REG,
+            LAPIC_LVT_LINT0_REG,
+            LAPIC_LVT_LINT1_REG,
+        ] {
             lapic.write_register(reg, APIC_MASKED);
         }
     }

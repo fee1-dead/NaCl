@@ -7,8 +7,8 @@ use x86_64::instructions::port::Port;
 use x86_64::instructions::{hlt, interrupts};
 
 use super::apic::{
-    lapic, IoApic, APIC_MASKED, LAPIC_TIMER_CURRCNT_REG, LAPIC_TIMER_INITCNT_REG,
-    LAPIC_LVT_TIMER_REG,
+    lapic, IoApic, APIC_MASKED, LAPIC_LVT_TIMER_REG, LAPIC_TIMER_CURRCNT_REG,
+    LAPIC_TIMER_INITCNT_REG,
 };
 use super::interrupts::InterruptIndex;
 use crate::arch::x86_64::apic::{APIC_TIMER_PERIODIC, LAPIC_TIMER_DIV_REG};
@@ -21,7 +21,7 @@ use crate::sprintln;
 static APIC_TICKS_IN_10MS: AtomicU32 = AtomicU32::new(0);
 
 fn get_irq_cnt() -> Wrapping<usize> {
-    cpu_enter(|c| c.timer)
+    cpu_enter(|c| c.timer).unwrap()
 }
 
 /// Configure the programmable interval timer for transition to

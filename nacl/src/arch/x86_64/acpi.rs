@@ -1,13 +1,13 @@
 use acpi::{AcpiTables, PlatformInfo};
-use bootloader::BootInfo;
+use stivale_boot::v2::StivaleStruct;
 
-use crate::memory::mapper::Mapper;
+use super::memory::mapper::Mapper;
 use crate::sprintln;
 
 pub type Tables = AcpiTables<Mapper>;
 
-pub fn get_acpi_tables(boot_info: &BootInfo, mapper: Mapper) -> Tables {
-    let rsdp = boot_info.rsdp_addr.into_option().unwrap();
+pub fn get_acpi_tables(boot_info: &StivaleStruct, mapper: Mapper) -> Tables {
+    let rsdp = boot_info.rsdp().unwrap().rsdp;
     unsafe { acpi::AcpiTables::from_rsdp(mapper, rsdp as usize) }.expect("ACPI tables")
 }
 

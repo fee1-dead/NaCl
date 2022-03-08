@@ -1,8 +1,9 @@
 use alloc::boxed::Box;
 use alloc::vec;
+use core::{fmt, slice};
 
-use bootloader::boot_info::FrameBuffer;
 use hashbrown::HashMap;
+use stivale_boot::v2::StivaleFramebufferTag;
 use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::task::lock::Mutex;
@@ -101,36 +102,73 @@ impl PsfHeader {
     }
 }
 
-#[derive(Debug)]
 pub struct FrameBufferManager {
-    fb: FrameBuffer,
+    fb: &'static mut [u8],
     mapping: Option<HashMap<char, u32>>,
     pub chars: Box<[char]>,
     pub horiz_chars: usize,
+    pub bytes_per_pixel: usize,
+    pub stride: usize,
     idx: usize,
+    /// Shift of the red mask in RGB.
+    pub red_mask_shift: u8,
+    /// Shift of the green mask in RGB.
+    pub green_mask_shift: u8,
+    /// Shift of the blue mask in RGB.
+    pub blue_mask_shift: u8,
+}
+
+impl fmt::Debug for FrameBufferManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FrameBufferManager")
+            .field("horiz_chars", &self.horiz_chars)
+            .field("bytes_per_pixel", &self.bytes_per_pixel)
+            .field("stride", &self.stride)
+            .field("idx", &self.idx)
+            .field("red_mask_shift", &self.red_mask_shift)
+            .field("green_mask_shift", &self.green_mask_shift)
+            .field("blue_mask_shift", &self.blue_mask_shift)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Color {
+    pub r: u32,
+    pub g: u32,
+    pub b: u32,
 }
 
 impl FrameBufferManager {
-    pub fn new(mut fb: FrameBuffer) -> Self {
+    pub fn new(tag: &'static StivaleFramebufferTag) -> Self {
         let font = PsfHeader::ft();
 
         let mapping = font.unicode_mapping();
 
-        let horiz_res = fb.info().horizontal_resolution;
+        let horiz_res = tag.framebuffer_width as usize;
         let horiz_chars = horiz_res / font.width as usize;
 
-        let vert_res = fb.info().vertical_resolution;
+        let vert_res = tag.framebuffer_height as usize;
         let vert_chars = vert_res / font.height as usize;
 
         let chars = vec![' '; horiz_chars * vert_chars].into_boxed_slice();
 
-        fb.buffer_mut().iter_mut().for_each(|b| *b = 0x00);
+        let bytes_per_pixel = (tag.framebuffer_bpp / 8) as usize;
+        let stride = tag.framebuffer_pitch as usize;
+
+        let fb = unsafe { slice::from_raw_parts_mut(tag.framebuffer_addr as *mut u8, tag.size()) };
+
         Self {
             fb,
             mapping,
             chars,
             horiz_chars,
+            bytes_per_pixel,
+            stride,
             idx: 0,
+            red_mask_shift: tag.red_mask_shift,
+            green_mask_shift: tag.green_mask_shift,
+            blue_mask_shift: tag.blue_mask_shift,
         }
     }
 
@@ -158,7 +196,7 @@ impl FrameBufferManager {
                 c,
                 self.idx,
                 self.chars.len() / self.horiz_chars - 1,
-                u32::MAX,
+                0xFFFFFF,
                 0,
             );
         }
@@ -172,7 +210,17 @@ impl FrameBufferManager {
         let mut y = 0;
         let horiz_chars = self.horiz_chars;
         for &c in self.chars.as_ref() {
-            Self::putc(&mut self.fb, &self.mapping, c, x, y, u32::MAX, 0);
+            Self::putc(
+                self.fb,
+                self.bytes_per_pixel,
+                self.stride,
+                &self.mapping,
+                c,
+                x,
+                y,
+                u32::MAX,
+                0,
+            );
             if x + 1 == horiz_chars {
                 y += 1;
                 x = 0;
@@ -190,7 +238,9 @@ impl FrameBufferManager {
     }
 
     fn putc(
-        fb: &mut FrameBuffer,
+        fb: &mut [u8],
+        bytes_per_pixel: usize,
+        stride: usize,
         mapping: &Option<HashMap<char, u32>>,
         c: char,
         cx: usize,
@@ -198,9 +248,6 @@ impl FrameBufferManager {
         fg: u32,
         bg: u32,
     ) {
-        let bytes_per_pixel = fb.info().bytes_per_pixel;
-        let scanline = fb.info().stride * bytes_per_pixel;
-
         assert_eq!(4, bytes_per_pixel);
 
         let font = PsfHeader::ft();
@@ -220,7 +267,7 @@ impl FrameBufferManager {
                 .add(glyph_index * font.bytes_per_glyph as usize)
         };
 
-        let mut offset = (cy * font_height * scanline) + (cx * font_width * bytes_per_pixel);
+        let mut offset = (cy * font_height * stride) + (cx * font_width * bytes_per_pixel);
 
         for _ in 0..font_height {
             let mut line = offset;
@@ -230,7 +277,7 @@ impl FrameBufferManager {
 
             for _ in 0..font_width {
                 unsafe {
-                    let pixel = fb.buffer_mut().as_mut_ptr().add(line) as *mut u32;
+                    let pixel = fb.as_mut_ptr().add(line) as *mut u32;
                     pixel.write_volatile(if gly & mask != 0 { fg } else { bg });
                 }
                 mask >>= 1;
@@ -239,12 +286,22 @@ impl FrameBufferManager {
             unsafe {
                 glyph = glyph.add(bytes_per_line);
             }
-            offset += scanline;
+            offset += stride;
         }
     }
 
-    fn putchar(&mut self, c: char, cx: usize, cy: usize, fg: u32, bg: u32) {
-        Self::putc(&mut self.fb, &self.mapping, c, cx, cy, fg, bg)
+    pub fn putchar(&mut self, c: char, cx: usize, cy: usize, fg: u32, bg: u32) {
+        Self::putc(
+            self.fb,
+            self.bytes_per_pixel,
+            self.stride,
+            &self.mapping,
+            c,
+            cx,
+            cy,
+            fg,
+            bg,
+        )
     }
 }
 
