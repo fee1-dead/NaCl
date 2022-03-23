@@ -4,6 +4,7 @@
 #![feature(array_from_fn)]
 #![feature(asm_sym, asm_const)]
 #![feature(bigint_helper_methods)]
+#![feature(cell_update)]
 #![feature(const_mut_refs)]
 #![feature(decl_macro)]
 #![feature(format_args_nl)]
@@ -18,7 +19,6 @@
 extern crate alloc;
 
 pub mod arch;
-pub mod context;
 pub mod cores;
 pub mod font;
 pub mod serial;
@@ -51,9 +51,9 @@ static STACK: PageAligned<[u8; STACK_SIZE]> = PageAligned([0; STACK_SIZE]);
 #[link_section = ".stivale2hdr"]
 #[used]
 pub static HEADER: StivaleHeader = StivaleHeader::new()
-//    .entry_point(kernel_start)
-// "How to write a library that only works with your own intended usage"
-// TODO fork the library and make it work with this
+    //    .entry_point(kernel_start)
+    // "How to write a library that only works with your own intended usage"
+    // TODO fork the library and make it work with this
     .stack(STACK.0.as_ptr())
     .tags({
         macro t($NAME:ident) {{

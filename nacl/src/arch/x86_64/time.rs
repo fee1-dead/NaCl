@@ -21,7 +21,7 @@ use crate::sprintln;
 static APIC_TICKS_IN_10MS: AtomicU32 = AtomicU32::new(0);
 
 fn get_irq_cnt() -> Wrapping<usize> {
-    cpu_enter(|c| c.timer).unwrap()
+    cpu_enter(|c| c.timer.get())
 }
 
 /// Configure the programmable interval timer for transition to

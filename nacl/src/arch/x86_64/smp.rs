@@ -1,13 +1,13 @@
 //! Simultanous multi processing.
 
+use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
 use core::ptr::{addr_of, addr_of_mut};
 use core::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 
 use acpi::platform::ProcessorState;
 use acpi::PlatformInfo;
-use alloc::boxed::Box;
-use stivale_boot::v2::{StivaleStruct, StivaleSmpInfo};
+use stivale_boot::v2::{StivaleSmpInfo, StivaleStruct};
 use x86_64::structures::gdt::{Descriptor, DescriptorFlags, GlobalDescriptorTable};
 use x86_64::structures::idt::InterruptDescriptorTable;
 use x86_64::structures::paging::mapper::PageTableFrameMapping;
@@ -16,8 +16,8 @@ use x86_64::structures::DescriptorTablePointer;
 use x86_64::VirtAddr;
 
 use super::apic::lapic;
-use crate::arch::id;
 use crate::arch::x86_64::apic::Lapic;
+use crate::cores::id;
 use crate::{hlt_loop, println};
 
 // variables for AP to read and use. Because AP's are not the BSP,
@@ -91,6 +91,7 @@ pub unsafe extern "C" fn ap_init_trampoline() -> ! {
 
 #[no_mangle]
 pub extern "C" fn ap_init(stivale_smp_info: &'static StivaleSmpInfo) -> ! {
+    lapic().set_id(stivale_smp_info.acpi_processor_uid);
     let prev = AP_STARTED.fetch_add(1, Ordering::Relaxed);
     println!("Hello from AP {}! There are {prev} cpus behind me", id());
     hlt_loop()

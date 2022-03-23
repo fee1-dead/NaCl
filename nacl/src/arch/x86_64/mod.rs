@@ -2,7 +2,7 @@ use raw_cpuid::CpuId;
 use stivale_boot::v2::StivaleStruct;
 
 mod acpi;
-mod apic;
+pub mod apic;
 mod boot;
 mod gdt;
 mod interrupts;
@@ -35,15 +35,4 @@ pub fn init(boot_info: &'static mut StivaleStruct) {
     smp::init(&platform_info, boot_info);
 
     x86_64::instructions::interrupts::enable();
-}
-
-/// Returns a unique identifying number of this processor.
-pub fn id() -> u8 {
-    // N.B. some processor specific models allow changin the LAPIC ID.
-    // initial lapic id is immutable and thus suitable for a unique identifier
-    // for processors.
-    CpuId::new()
-        .get_feature_info()
-        .unwrap()
-        .initial_local_apic_id()
 }

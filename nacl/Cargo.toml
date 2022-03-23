@@ -23,6 +23,16 @@ version = "0.2.1"
 default-features = false
 features = ["alloc"]
 
+[dependencies.crossbeam-epoch]
+version = "0.9.8"
+default-features = false
+features = ["alloc", "nightly"]
+
+[dependencies.crossbeam-utils]
+version = "0.8.8"
+default-features = false
+features = ["nightly"]
+
 [dependencies.lazy_static]
 version = "1.0"
 features = ["spin_no_std"]

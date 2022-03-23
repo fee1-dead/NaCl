@@ -1,5 +1,31 @@
+pub mod crossbeam;
 pub mod executor;
+pub mod gc;
 pub mod lock;
+
+use crossbeam::{Injector, Stealer, Worker};
+use core::iter;
+
+pub fn find_task<T>(
+    local: &Worker<T>,
+    global: &Injector<T>,
+    stealers: &[Stealer<T>],
+) -> Option<T> {
+    // Pop a task from the local queue, if not empty.
+    local.pop().or_else(|| {
+        // Otherwise, we need to look for a task elsewhere.
+        iter::repeat_with(|| {
+            // Try stealing a batch of tasks from the global queue.
+            global.steal_batch_and_pop(local)
+                // Or try stealing a task from one of the other threads.
+                .or_else(|| stealers.iter().map(|s| s.steal()).collect())
+        })
+        // Loop while no task was stolen and any steal operation needs to be retried.
+        .find(|s| !s.is_retry())
+        // Extract the stolen task, if there is one.
+        .and_then(|s| s.success())
+    })
+}
 
 use alloc::boxed::Box;
 use core::future::Future;
@@ -8,7 +34,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use core::task::{Context, Poll};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct TaskId(u64);
+pub struct TaskId(u64);
 
 impl TaskId {
     fn new() -> Self {
@@ -40,12 +66,13 @@ pub struct Yield(bool);
 
 impl Future for Yield {
     type Output = ();
-    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let b = &mut self.get_mut().0;
         if *b {
             Poll::Ready(())
         } else {
             *b = true;
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }

@@ -43,6 +43,9 @@ pub const APIC_MASKED: u32 = 0x10000;
 ////////////////////////////////////
 // REGISTERS
 
+/// The register for local APIC ID.
+pub const LAPIC_ID_REG: usize = 0x020;
+
 /// The local vector table for LAPIC timer.
 ///
 /// See LVT format at https://wiki.osdev.org/APIC#Local_Vector_Table_Registers
@@ -74,7 +77,6 @@ impl Lapic {
         self.write_register(0xB0, 0);
     }
 
-    #[inline]
     pub unsafe fn register_at(&mut self, offset: usize) -> *mut u32 {
         self.start_ptr.as_ptr().add(offset).cast()
     }
@@ -82,6 +84,16 @@ impl Lapic {
     pub unsafe fn icr_wait_for_delivery(&mut self) {
         while self.read_register(0x300) & (1 << 12) != 0 {
             spin_loop()
+        }
+    }
+
+    pub fn id(&mut self) -> u32 {
+        unsafe { self.read_register(LAPIC_ID_REG) }
+    }
+
+    pub fn set_id(&mut self, id: u32) {
+        unsafe {
+            self.write_register(LAPIC_ID_REG, id);
         }
     }
 

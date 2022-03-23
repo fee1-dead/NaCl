@@ -1,17 +1,32 @@
+use alloc::boxed::Box;
 use core::array;
+use core::cell::Cell;
 use core::marker::PhantomData;
 use core::num::Wrapping;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crossbeam_epoch::LocalHandle;
+use stivale_boot::v2::StivaleSmpInfo;
+
+use crate::task::TaskId;
+use crate::task::crossbeam::Worker;
+
 pub const MAX_NUM_CPUS: usize = 64;
 
+/// a large structure containing core-local state.
 pub struct Cpu {
-    pub timer: Wrapping<usize>,
+    pub timer: Cell<Wrapping<usize>>,
+    pub local_handle: LocalHandle,
+    pub worker: Worker<TaskId>,
 }
 
 impl Cpu {
-    pub const fn new() -> Cpu {
-        Cpu { timer: Wrapping(0) }
+    pub fn new() -> Cpu {
+        Cpu {
+            timer: Cell::new(Wrapping(0)),
+            local_handle: crate::task::gc::default_collector().register(),
+            worker: Worker::new_fifo(),
+        }
     }
 }
 
@@ -20,7 +35,7 @@ impl Cpu {
 #[repr(transparent)]
 pub struct CpuKey<'a> {
     /// the assigned number of this cpu.
-    num: u8,
+    num: u32,
 
     /// cannot send this
     _notsend: PhantomData<*const ()>,
@@ -30,8 +45,8 @@ pub struct CpuKey<'a> {
 }
 
 /// Returns a unique identifying number of this processor.
-pub fn id() -> u8 {
-    crate::arch::id()
+pub fn id() -> u32 {
+    crate::arch::apic::lapic().id()
 }
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -39,41 +54,27 @@ const CPU_SCOPE_INIT: AtomicBool = AtomicBool::new(false);
 static CPU_ENTERS: [AtomicBool; MAX_NUM_CPUS] = [CPU_SCOPE_INIT; MAX_NUM_CPUS];
 
 impl CpuKey<'static> {
-    #[inline]
-    pub fn scope<F, T>(callback: F) -> Option<T>
+    pub fn scope<F, T>(callback: F) -> T
     where
         F: for<'a> FnOnce(&CpuKey<'a>) -> T,
     {
         let num = id();
-        if CPU_ENTERS[num as usize]
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-        {
-            let key = CpuKey {
-                num,
-                _notsend: PhantomData,
-                _lt_invariant: PhantomData,
-            };
-            let val = callback(&key);
-
-            let _ = CPU_ENTERS[num as usize].compare_exchange(
-                true,
-                false,
-                Ordering::Release,
-                Ordering::Relaxed,
-            );
-
-            Some(val)
-        } else {
-            None
-        }
+        let key = CpuKey {
+            num,
+            _notsend: PhantomData,
+            _lt_invariant: PhantomData,
+        };
+        callback(&key)
     }
 }
 
-const CPU_INIT: Cpu = Cpu::new();
-static mut CPUS: [Cpu; MAX_NUM_CPUS] = [CPU_INIT; MAX_NUM_CPUS];
+const CPU_INIT: Option<&'static mut Cpu> = None;
+static mut CPUS: [Option<&'static mut Cpu>; MAX_NUM_CPUS] = [CPU_INIT; MAX_NUM_CPUS];
 
-pub fn cpu_enter<F: FnOnce(&mut Cpu) -> T, T>(f: F) -> Option<T> {
+pub fn cpu_enter<F: FnOnce(&Cpu) -> T, T>(f: F) -> T {
     // SAFETY: the key guarantees unique access of the CPU.
-    CpuKey::scope(move |k| f(unsafe { &mut CPUS[k.num as usize] }))
+    CpuKey::scope(move |k| {
+        f(unsafe { &mut CPUS[k.num as usize] }
+            .get_or_insert_with(|| Box::leak(Box::new(Cpu::new()))))
+    })
 }
