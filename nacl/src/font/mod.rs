@@ -10,7 +10,7 @@ use crate::task::lock::Mutex;
 
 static FT: &[u8] = include_bytes!("ter-u20n.psf");
 
-static FBMAN: Mutex<Option<FrameBufferManager>> = Mutex::new(None);
+pub static FBMAN: Mutex<Option<FrameBufferManager>> = Mutex::new(None);
 
 pub(crate) fn insert_fbman(fbman: FrameBufferManager) {
     let mut guard = FBMAN.lock_or_spin();

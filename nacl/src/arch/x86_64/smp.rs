@@ -17,7 +17,7 @@ use x86_64::VirtAddr;
 
 use super::apic::lapic;
 use crate::arch::x86_64::apic::Lapic;
-use crate::cores::id;
+use crate::cores::{id, cpu};
 use crate::{hlt_loop, println};
 
 // variables for AP to read and use. Because AP's are not the BSP,
@@ -94,7 +94,8 @@ pub extern "C" fn ap_init(stivale_smp_info: &'static StivaleSmpInfo) -> ! {
     lapic().set_id(stivale_smp_info.acpi_processor_uid);
     let prev = AP_STARTED.fetch_add(1, Ordering::Relaxed);
     println!("Hello from AP {}! There are {prev} cpus behind me", id());
-    hlt_loop()
+    // cpu().executor.borrow_mut().run();
+    loop {}
 }
 
 pub fn init(platform_info: &PlatformInfo, stivale_struct: &'static mut StivaleStruct) {

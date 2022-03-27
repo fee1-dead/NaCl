@@ -7,7 +7,7 @@ use x86_64::structures::idt::{
 };
 
 use super::apic::lapic;
-use crate::cores::cpu_enter;
+use crate::cores::cpu;
 use crate::{hlt_loop, sprintln};
 
 lazy_static! {
@@ -54,9 +54,7 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    cpu_enter(|cpu| {
-        cpu.timer.update(|n| n + Wrapping(1));
-    });
+    cpu().timer.update(|n| n + Wrapping(1));
 
     unsafe {
         lapic().end_of_interrupt();

@@ -12,7 +12,7 @@ use super::apic::{
 };
 use super::interrupts::InterruptIndex;
 use crate::arch::x86_64::apic::{APIC_TIMER_PERIODIC, LAPIC_TIMER_DIV_REG};
-use crate::cores::cpu_enter;
+use crate::cores::cpu;
 use crate::sprintln;
 
 /// number of APIC ticks in 10ms, used by AP init sequence.
@@ -21,7 +21,7 @@ use crate::sprintln;
 static APIC_TICKS_IN_10MS: AtomicU32 = AtomicU32::new(0);
 
 fn get_irq_cnt() -> Wrapping<usize> {
-    cpu_enter(|c| c.timer.get())
+    cpu().timer.get()
 }
 
 /// Configure the programmable interval timer for transition to

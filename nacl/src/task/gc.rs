@@ -6,7 +6,7 @@
 
 use crossbeam_epoch::{Collector, Guard, LocalHandle};
 
-use crate::cores::cpu_enter;
+use crate::cores::cpu;
 
 lazy_static::lazy_static! {
     /// The global data for the default garbage collector.
@@ -35,5 +35,5 @@ fn with_handle<F, R>(mut f: F) -> R
 where
     F: FnMut(&LocalHandle) -> R,
 {
-    cpu_enter(|cpu| f(&cpu.local_handle))
+    f(&cpu().local_handle)
 }

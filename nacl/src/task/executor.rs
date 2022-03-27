@@ -4,7 +4,7 @@ use core::task::{Context, Poll, Waker};
 use crossbeam_queue::ArrayQueue;
 use hashbrown::HashMap;
 
-use crate::cores::cpu_enter;
+use crate::cores::{cpu, stealers};
 
 use super::crossbeam::Worker;
 use super::{Task, TaskId};
@@ -13,8 +13,6 @@ pub struct Executor {
     tasks: HashMap<TaskId, Task>,
     waker_cache: HashMap<TaskId, Waker>,
 }
-
-struct ComplexExecutor {}
 
 impl Default for Executor {
     #[inline]
@@ -37,7 +35,7 @@ impl Executor {
         if self.tasks.insert(task.id, task).is_some() {
             panic!("task with same ID already in tasks");
         }
-        cpu_enter(|cpu| cpu.worker.push(task_id));
+        cpu().worker.push(task_id);
     }
 
     fn run_ready_tasks(&mut self) {
@@ -45,9 +43,7 @@ impl Executor {
             tasks,
             waker_cache,
         } = self;
-
-        cpu_enter(|cpu| {
-            while let Some(task_id) = cpu.worker.pop() {
+            while let Some(task_id) = cpu().worker.pop() {
                 let task = match tasks.get_mut(&task_id) {
                     Some(task) => task,
                     None => continue, // task no longer exists
@@ -65,7 +61,6 @@ impl Executor {
                     Poll::Pending => {}
                 }
             }
-        });
     }
 
     pub fn run(&mut self) -> ! {
@@ -79,8 +74,17 @@ impl Executor {
         use x86_64::instructions::interrupts::{self, enable_and_hlt};
 
         interrupts::disable();
-        if cpu_enter(|cpu| cpu.worker.is_empty()) { // TODO???
-            enable_and_hlt();
+        if cpu().worker.is_empty() {
+            panic!();
+            if !stealers().any(|stealer| {
+                let mut res = stealer.steal_batch(&cpu().worker);
+                while res.is_retry() {
+                    res = stealer.steal_batch(&cpu().worker);
+                }
+                res.is_success()
+            }) {
+                enable_and_hlt();
+            }
         } else {
             interrupts::enable();
         }
@@ -93,7 +97,7 @@ struct TaskWaker {
 
 impl TaskWaker {
     fn wake_task(&self) {
-        cpu_enter(|cpu| cpu.worker.push(self.task_id));
+        cpu().worker.push(self.task_id);
     }
 }
 

@@ -25,6 +25,7 @@ pub mod serial;
 pub mod task;
 
 use core::arch::asm;
+use core::fmt::Write;
 use core::mem;
 use core::panic::PanicInfo;
 use core::time::Duration;
@@ -37,8 +38,8 @@ use x86_64::structures::gdt::DescriptorFlags;
 use x86_64::VirtAddr;
 
 use crate::arch::delay;
-use crate::cores::id;
-use crate::font::FrameBufferManager;
+use crate::cores::{id, cpu};
+use crate::font::{FrameBufferManager, FBMAN};
 
 #[repr(C, align(4096))]
 pub struct PageAligned<T>(pub T);
@@ -79,10 +80,12 @@ pub extern "C" fn kernel_start(boot_info: &'static mut StivaleStruct) -> ! {
     println!("NaCl v{}", env!("CARGO_PKG_VERSION"));
     println!("Ayo");
 
-    loop {
-        delay(Duration::from_secs(1));
-        println!("SEC!");
-    }
+    /*for i in 1..1000 {
+        cpu().executor.borrow_mut().spawn(task::Task::new(async move {
+            FBMAN.lock().await.as_mut().unwrap().write_fmt(format_args_nl!("{i}")).unwrap();
+        }))
+    }*/
+    cpu().executor.borrow_mut().run();
 }
 
 fn init(boot_info: &'static mut StivaleStruct) {
