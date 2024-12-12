@@ -103,7 +103,7 @@ pub extern "C" fn kernel_start() -> ! {
 pub struct Logger;
 
 impl Log for Logger {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
+    fn enabled(&self, _: &log::Metadata) -> bool {
         true
     }
     fn log(&self, record: &log::Record) {

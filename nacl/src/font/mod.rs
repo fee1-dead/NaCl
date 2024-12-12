@@ -4,7 +4,6 @@ use limine::framebuffer::Framebuffer;
 use core::{fmt, slice};
 
 use hashbrown::HashMap;
-use stivale_boot::v2::StivaleFramebufferTag;
 use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::task::lock::Mutex;
