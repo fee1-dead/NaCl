@@ -1,12 +1,10 @@
 use alloc::sync::Arc;
 use core::task::{Context, Poll, Waker};
 
-use crossbeam_queue::ArrayQueue;
 use hashbrown::HashMap;
 
 use crate::cores::{cpu, stealers};
 
-use super::crossbeam::Worker;
 use super::{Task, TaskId};
 
 pub struct Executor {
@@ -75,7 +73,7 @@ impl Executor {
 
         interrupts::disable();
         if cpu().worker.is_empty() {
-            panic!();
+            if true { panic!(); }
             if !stealers().any(|stealer| {
                 let mut res = stealer.steal_batch(&cpu().worker);
                 while res.is_retry() {

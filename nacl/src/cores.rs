@@ -34,6 +34,7 @@ impl Cpu {
     }
 }
 
+
 /// A key that is only accessible from a particular CPU.
 #[derive(PartialEq, Eq)]
 #[repr(transparent)]

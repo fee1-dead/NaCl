@@ -1,5 +1,5 @@
 #![feature(exit_status_error, iter_advance_by)]
-use std::env::current_dir;
+
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Command;

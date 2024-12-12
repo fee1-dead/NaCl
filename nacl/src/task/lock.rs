@@ -48,8 +48,8 @@ impl<'a, T> Future for MutexLockFuture<'a, T> {
         // Fast path. Avoid registering this task's waker.
         if check(locked).is_ok() {
             return Poll::Ready(MutexGuard {
-                waker: *waker,
-                locked: *locked,
+                waker,
+                locked,
                 inner: unsafe { &mut *inner.get() },
             });
         }
@@ -57,8 +57,8 @@ impl<'a, T> Future for MutexLockFuture<'a, T> {
         waker.register(cx.waker());
         if check(locked).is_ok() {
             Poll::Ready(MutexGuard {
-                waker: *waker,
-                locked: *locked,
+                waker,
+                locked,
                 inner: unsafe { &mut *inner.get() },
             })
         } else {
@@ -109,20 +109,20 @@ impl<T> Mutex<T> {
     }
 }
 
-impl<'a, T> Drop for MutexGuard<'a, T> {
+impl<T> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
         self.locked.store(false, Ordering::Release);
         self.waker.wake();
     }
 }
 
-impl<'a, T> DerefMut for MutexGuard<'a, T> {
+impl<T> DerefMut for MutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.inner
     }
 }
 
-impl<'a, T> Deref for MutexGuard<'a, T> {
+impl<T> Deref for MutexGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

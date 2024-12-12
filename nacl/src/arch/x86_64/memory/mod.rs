@@ -1,7 +1,10 @@
 pub mod allocator;
 pub mod mapper;
 
-use stivale_boot::v2::{StivaleMemoryMapEntry, StivaleMemoryMapEntryType, StivaleMemoryMapTag};
+use core::iter::{Filter, FlatMap, Map, StepBy};
+use core::ops::Range;
+
+use stivale_boot::v2::{StivaleMemoryMapEntry, StivaleMemoryMapEntryType, StivaleMemoryMapIter, StivaleMemoryMapTag};
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -36,7 +39,10 @@ pub unsafe fn init(physical_memory_offset: VirtAddr, memory_regions: &'static St
         .expect("heap initialization failed");
 }
 
-type UsableFrames = impl Iterator<Item = PhysFrame>;
+type FilterFn = fn(&&StivaleMemoryMapEntry) -> bool;
+type FlatMapFn = fn(&StivaleMemoryMapEntry) -> StepBy<Range<u64>>;
+type MapFn = fn(u64) -> PhysFrame;
+type UsableFrames = Map<FlatMap<Filter<StivaleMemoryMapIter<'static>, FilterFn>, StepBy<Range<u64>>, FlatMapFn>, MapFn>;
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
@@ -45,16 +51,18 @@ pub struct BootInfoFrameAllocator {
 
 impl BootInfoFrameAllocator {
     fn usable_frames(regions: &'static StivaleMemoryMapTag) -> UsableFrames {
+        let f: FilterFn = |r| r.entry_type == StivaleMemoryMapEntryType::Usable;
+        let f2: FlatMapFn = |r| (r.base..r.end_address()).step_by(4096);
+        let f3: MapFn = |addr| PhysFrame::containing_address(PhysAddr::new(addr));
         regions
             .iter()
             // find usable regions
-            .filter(|r| r.entry_type == StivaleMemoryMapEntryType::Usable)
-            // map each region to its address range
-            .map(|r| r.base..r.end_address())
+            .filter(f)
+            // map each region to its address range; and
             // transform to an iterator of frame start address with alignment of 4KiB.
-            .flat_map(|r| r.step_by(4096))
+            .flat_map(f2)
             // create `PhysFrame` types from the start addresses.
-            .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+            .map(f3)
     }
 
     /// Create a FrameAllocator from the passed memory map.

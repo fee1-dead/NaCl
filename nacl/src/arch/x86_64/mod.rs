@@ -1,4 +1,3 @@
-use raw_cpuid::CpuId;
 use stivale_boot::v2::StivaleStruct;
 
 mod acpi;
@@ -7,7 +6,7 @@ mod boot;
 mod gdt;
 mod interrupts;
 mod memory;
-mod smp;
+// mod smp;
 mod time;
 
 pub use memory::init as memory_init;
@@ -32,7 +31,7 @@ pub fn init(boot_info: &'static mut StivaleStruct) {
     apic::init_lapic(&platform_info, &mapper);
     let (ioapic, pitreg) = apic::init_ioapic(&platform_info, &mapper);
     time::init(ioapic, pitreg);
-    smp::init(&platform_info, boot_info);
+    // smp::init(&platform_info, boot_info);
 
     x86_64::instructions::interrupts::enable();
 }

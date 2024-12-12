@@ -2,5 +2,6 @@ cargo-features = ["per-package-target"]
 
 [workspace]
 members = ["nacl_boot", "nacl"]
+resolver = "2"
 
 
