@@ -1,7 +1,7 @@
 /* Tell the linker that we want an x86_64 ELF64 output file */
 OUTPUT_FORMAT(elf64-x86-64)
 
-/* We want the symbol kmain to be our entry point */
+/* We want the symbol kernel_start to be our entry point */
 ENTRY(kernel_start)
 
 /* Define the program headers we want so the bootloader gives us the right */
