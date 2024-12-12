@@ -19,56 +19,73 @@ pub mod font;
 pub mod serial;
 pub mod task;
 
-use core::arch::asm;
-use core::fmt::Write;
-use core::mem;
 use core::panic::PanicInfo;
-use core::time::Duration;
 
-use stivale_boot::v2::{
-    Stivale5LevelPagingHeaderTag, StivaleFramebufferHeaderTag, StivaleHeader, StivaleSmpHeaderTag,
-    StivaleStruct, StivaleUnmapNullHeaderTag,
-};
-use x86_64::structures::gdt::DescriptorFlags;
+use limine::paging::Mode;
+
+use log::Log;
 use x86_64::VirtAddr;
 
-use crate::arch::delay;
-use crate::cores::{id, cpu};
-use crate::font::{FrameBufferManager, FBMAN};
+use crate::cores::cpu;
+use crate::font::FrameBufferManager;
 
 #[repr(C, align(4096))]
 pub struct PageAligned<T>(pub T);
 
 // 32 KiB of stack
-const STACK_SIZE: usize = 32 * 1024;
+const STACK_SIZE: u64 = 32 * 1024;
 
-static STACK: PageAligned<[u8; STACK_SIZE]> = PageAligned([0; STACK_SIZE]);
+use limine::request::{
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, PagingModeRequest, RequestsEndMarker, RequestsStartMarker, RsdpRequest, StackSizeRequest
+};
+use limine::BaseRevision;
 
-#[link_section = ".stivale2hdr"]
+/// Sets the base revision to the latest revision supported by the crate.
+/// See specification for further info.
+/// Be sure to mark all limine requests with #[used], otherwise they may be removed by the compiler.
 #[used]
-pub static HEADER: StivaleHeader = StivaleHeader::new()
-    //    .entry_point(kernel_start)
-    // "How to write a library that only works with your own intended usage"
-    // TODO fork the library and make it work with this
-    .stack(STACK.0.as_ptr())
-    .tags({
-        macro t($NAME:ident) {{
-            &$NAME as *const _ as *const ()
-        }}
-        static SMP: StivaleSmpHeaderTag = StivaleSmpHeaderTag::new();
-        static UNMAP_NULL: StivaleUnmapNullHeaderTag =
-            StivaleUnmapNullHeaderTag::new().next(t!(SMP));
-        static LEVEL_5_PAGING: Stivale5LevelPagingHeaderTag =
-            Stivale5LevelPagingHeaderTag::new().next(t!(UNMAP_NULL));
-        static FRAMEBUFFER: StivaleFramebufferHeaderTag =
-            StivaleFramebufferHeaderTag::new().next(t!(LEVEL_5_PAGING));
+// The .requests section allows limine to find the requests faster and more safely.
+#[link_section = ".requests"]
+static BASE_REVISION: BaseRevision = BaseRevision::new();
 
-        t!(FRAMEBUFFER)
-    });
+#[used]
+#[link_section = ".requests"]
+static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
+#[used]
+#[link_section = ".requests"]
+static PAGING_MODE_REQUEST: PagingModeRequest =
+    PagingModeRequest::new().with_mode(Mode::FIVE_LEVEL);
+
+#[used]
+#[link_section = ".requests"]
+static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new().with_size(STACK_SIZE);
+
+#[used]
+#[link_section = ".requests"]
+static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
+
+#[used]
+#[link_section = ".requests"]
+static MEMORY_MAP_REQUEST: MemoryMapRequest = MemoryMapRequest::new();
+
+#[used]
+#[link_section = ".requests"]
+static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
+
+/// Define the stand and end markers for Limine requests.
+#[used]
+#[link_section = ".requests_start_marker"]
+static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
+#[used]
+#[link_section = ".requests_end_marker"]
+static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 #[no_mangle]
-pub extern "C" fn kernel_start(boot_info: &'static mut StivaleStruct) -> ! {
-    init(boot_info);
+pub extern "C" fn kernel_start() -> ! {
+    assert!(BASE_REVISION.is_supported());
+
+    init();
 
     sprintln!("ok");
 
@@ -83,21 +100,41 @@ pub extern "C" fn kernel_start(boot_info: &'static mut StivaleStruct) -> ! {
     cpu().executor.borrow_mut().run();
 }
 
-fn init(boot_info: &'static mut StivaleStruct) {
-    let phys_mem_offset = VirtAddr::new(boot_info.vmap().expect("expected vmap tag").address);
+pub struct Logger;
+
+impl Log for Logger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        true
+    }
+    fn log(&self, record: &log::Record) {
+        sprintln!("{} - {}", record.level(), record.args())
+    }
+    fn flush(&self) {
+        
+    }
+}
+
+fn init() {
+    let physical_memory_offset = HHDM_REQUEST.get_response().unwrap().offset();
     // SAFETY: provided via boot_info, so it is correct
     unsafe {
-        crate::arch::memory_init(phys_mem_offset, boot_info.memory_map().unwrap());
+        crate::arch::memory_init(
+            VirtAddr::new(physical_memory_offset),
+            MEMORY_MAP_REQUEST.get_response().unwrap().entries(),
+        );
     }
+    log::set_logger(&Logger).unwrap();
+    log::set_max_level(log::LevelFilter::Warn);
+    // log::info!("hi");
 
-    let frame_buffer = boot_info.framebuffer().unwrap();
-    let mut fb = FrameBufferManager::new(frame_buffer);
+    let frame_buffer = FRAMEBUFFER_REQUEST.get_response().unwrap().framebuffers().next().unwrap();
+    let mut fb = FrameBufferManager::new(&frame_buffer);
     sprintln!("{fb:?}");
     fb.putchar('F', 0, 0, 0xFFFFFF, 0);
     font::insert_fbman(fb);
 
     // initialize per-core memory access.
-    crate::arch::init(boot_info);
+    crate::arch::init(physical_memory_offset as usize, RSDP_REQUEST.get_response().unwrap().address() as usize - physical_memory_offset as usize);
 }
 
 #[panic_handler]

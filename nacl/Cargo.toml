@@ -17,6 +17,8 @@ hashbrown = "0.11.2"
 raw-cpuid = "10.2.0"
 pic8259 = "0.10.1"
 stivale-boot = "0.2"
+limine = "0.3.1"
+log = "0.4.22"
 
 [dependencies.crossbeam-queue]
 version = "0.2.1"

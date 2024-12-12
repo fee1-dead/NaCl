@@ -3,9 +3,8 @@ use core::task::{Context, Poll, Waker};
 
 use hashbrown::HashMap;
 
-use crate::cores::{cpu, stealers};
-
 use super::{Task, TaskId};
+use crate::cores::{cpu, stealers};
 
 pub struct Executor {
     tasks: HashMap<TaskId, Task>,
@@ -37,28 +36,25 @@ impl Executor {
     }
 
     fn run_ready_tasks(&mut self) {
-        let Self {
-            tasks,
-            waker_cache,
-        } = self;
-            while let Some(task_id) = cpu().worker.pop() {
-                let task = match tasks.get_mut(&task_id) {
-                    Some(task) => task,
-                    None => continue, // task no longer exists
-                };
-                let waker = waker_cache
-                    .entry(task_id)
-                    .or_insert_with(|| TaskWaker::new_waker(task_id));
-                let mut context = Context::from_waker(waker);
-                match task.poll(&mut context) {
-                    Poll::Ready(()) => {
-                        // task done -> remove it and its cached waker
-                        tasks.remove(&task_id);
-                        waker_cache.remove(&task_id);
-                    }
-                    Poll::Pending => {}
+        let Self { tasks, waker_cache } = self;
+        while let Some(task_id) = cpu().worker.pop() {
+            let task = match tasks.get_mut(&task_id) {
+                Some(task) => task,
+                None => continue, // task no longer exists
+            };
+            let waker = waker_cache
+                .entry(task_id)
+                .or_insert_with(|| TaskWaker::new_waker(task_id));
+            let mut context = Context::from_waker(waker);
+            match task.poll(&mut context) {
+                Poll::Ready(()) => {
+                    // task done -> remove it and its cached waker
+                    tasks.remove(&task_id);
+                    waker_cache.remove(&task_id);
                 }
+                Poll::Pending => {}
             }
+        }
     }
 
     pub fn run(&mut self) -> ! {
@@ -73,7 +69,9 @@ impl Executor {
 
         interrupts::disable();
         if cpu().worker.is_empty() {
-            if true { panic!(); }
+            if false {
+                panic!();
+            }
             if !stealers().any(|stealer| {
                 let mut res = stealer.steal_batch(&cpu().worker);
                 while res.is_retry() {
@@ -113,8 +111,6 @@ impl Wake for TaskWaker {
 
 impl TaskWaker {
     fn new_waker(task_id: TaskId) -> Waker {
-        Waker::from(Arc::new(TaskWaker {
-            task_id,
-        }))
+        Waker::from(Arc::new(TaskWaker { task_id }))
     }
 }

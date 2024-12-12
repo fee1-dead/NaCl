@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec;
+use limine::framebuffer::Framebuffer;
 use core::{fmt, slice};
 
 use hashbrown::HashMap;
@@ -140,23 +141,23 @@ pub struct Color {
 }
 
 impl FrameBufferManager {
-    pub fn new(tag: &'static StivaleFramebufferTag) -> Self {
+    pub fn new(b: &Framebuffer<'_>) -> Self {
         let font = PsfHeader::ft();
 
         let mapping = font.unicode_mapping();
 
-        let horiz_res = tag.framebuffer_width as usize;
+        let horiz_res = b.width() as usize;
         let horiz_chars = horiz_res / font.width as usize;
 
-        let vert_res = tag.framebuffer_height as usize;
+        let vert_res = b.height() as usize;
         let vert_chars = vert_res / font.height as usize;
 
         let chars = vec![' '; horiz_chars * vert_chars].into_boxed_slice();
 
-        let bytes_per_pixel = (tag.framebuffer_bpp / 8) as usize;
-        let stride = tag.framebuffer_pitch as usize;
+        let bytes_per_pixel = (b.bpp() / 8) as usize;
+        let stride = b.pitch() as usize;
 
-        let fb = unsafe { slice::from_raw_parts_mut(tag.framebuffer_addr as *mut u8, tag.size()) };
+        let fb = unsafe { slice::from_raw_parts_mut(b.addr(), b.height() as usize * stride) };
 
         Self {
             fb,
@@ -166,9 +167,9 @@ impl FrameBufferManager {
             bytes_per_pixel,
             stride,
             idx: 0,
-            red_mask_shift: tag.red_mask_shift,
-            green_mask_shift: tag.green_mask_shift,
-            blue_mask_shift: tag.blue_mask_shift,
+            red_mask_shift: b.red_mask_shift(),
+            green_mask_shift: b.green_mask_shift(),
+            blue_mask_shift: b.blue_mask_shift(),
         }
     }
 

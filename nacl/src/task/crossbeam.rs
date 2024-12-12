@@ -80,7 +80,9 @@ impl<T> Buffer<T> {
 }
 
 impl<T> Clone for Buffer<T> {
-    fn clone(&self) -> Buffer<T> { *self }
+    fn clone(&self) -> Buffer<T> {
+        *self
+    }
 }
 
 impl<T> Copy for Buffer<T> {}
@@ -116,7 +118,9 @@ impl<T> Drop for Inner<T> {
         let f = self.front.load(Ordering::Relaxed);
 
         unsafe {
-            let buffer = self.buffer.load(Ordering::Relaxed, crossbeam_epoch::unprotected());
+            let buffer = self
+                .buffer
+                .load(Ordering::Relaxed, crossbeam_epoch::unprotected());
 
             // Go through the buffer from front to back and drop all tasks in the queue.
             let mut i = f;

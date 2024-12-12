@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use x86_64::instructions::interrupts::without_interrupts;
 use core::array;
 use core::cell::{Cell, RefCell};
 use core::marker::PhantomData;
@@ -8,10 +7,11 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crossbeam_epoch::LocalHandle;
 use stivale_boot::v2::StivaleSmpInfo;
+use x86_64::instructions::interrupts::without_interrupts;
 
-use crate::task::TaskId;
-use crate::task::crossbeam::{Worker, Stealer};
+use crate::task::crossbeam::{Stealer, Worker};
 use crate::task::executor::Executor;
+use crate::task::TaskId;
 
 pub const MAX_NUM_CPUS: usize = 64;
 
@@ -33,7 +33,6 @@ impl Cpu {
         }
     }
 }
-
 
 /// A key that is only accessible from a particular CPU.
 #[derive(PartialEq, Eq)]
@@ -81,21 +80,18 @@ const STEALER_INIT: Option<Stealer<TaskId>> = None;
 pub static mut STEALERS: [Option<Stealer<TaskId>>; MAX_NUM_CPUS] = [STEALER_INIT; MAX_NUM_CPUS];
 
 pub fn stealers<'a>() -> impl Iterator<Item = &'a Stealer<TaskId>> {
-    unsafe {
-        STEALERS.iter().filter_map(|st| st.as_ref())
-    }
+    unsafe { STEALERS.iter().filter_map(|st| st.as_ref()) }
 }
 
 pub fn cpu<'a>() -> &'a Cpu {
     // SAFETY: the key guarantees unique access of the CPU.
     CpuKey::scope(move |k| {
-        unsafe { &mut CPUS[k.num as usize] }
-            .get_or_insert_with(|| {
-                let cpu = Box::leak(Box::new(Cpu::new()));
-                unsafe {
-                    STEALERS[k.num as usize] = Some(cpu.worker.stealer());
-                }
-                cpu
-            })
+        unsafe { &mut CPUS[k.num as usize] }.get_or_insert_with(|| {
+            let cpu = Box::leak(Box::new(Cpu::new()));
+            unsafe {
+                STEALERS[k.num as usize] = Some(cpu.worker.stealer());
+            }
+            cpu
+        })
     })
 }

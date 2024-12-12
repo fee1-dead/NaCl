@@ -18,7 +18,10 @@ fn main() -> anyhow::Result<()> {
     let output = Command::new(cargo)
         .arg("build")
         .arg("--release")
+        .arg("--target")
+        .arg("x86_64-unknown-none")
         .arg("--message-format=json")
+        .env("RUSTFLAGS", "-C relocation-model=static")
         .current_dir(Path::new("./nacl").canonicalize()?)
         .output()?;
     output.status.exit_ok()?;
@@ -43,25 +46,29 @@ fn main() -> anyhow::Result<()> {
         false
     };
 
-    let bios = create_disk_images(kernel_binary_path)?;
-    Command::new("./limine/limine-install")
+    create_disk_images(kernel_binary_path)?;
+    println!("bios created");
+    /*Command::new("/usr/bin/env")
+        .arg("sh")
+        .arg("./limine/install-sh")
         .arg(&bios)
         .status()?
-        .exit_ok()?;
+        .exit_ok()?;*/
 
     if no_boot {
-        println!("Created disk image at `{}`", bios.display());
+        // println!("Created disk image at `{}`", bios.display());
         return Ok(());
     }
 
-    let mut run_cmd = Command::new("qemu-system-x86_64");
+    let mut run_cmd = Command::new("qemu-system-x86_64-uefi");
     run_cmd
+        .arg("-enable-kvm")
         .arg("-drive")
-        .arg(format!("format=raw,file={}", bios.display()))
+        .arg(format!("format=raw,file=fat:rw:iso_root"))
         .arg("-serial")
         .arg("stdio")
-        .arg("-smp")
-        .arg("4")
+        // .arg("-smp")
+        // .arg("4")
         .arg("-m")
         .arg("1G");
     run_cmd.args(RUN_ARGS);
@@ -74,40 +81,48 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn create_disk_images(kernel_binary_path: &Path) -> anyhow::Result<PathBuf> {
+pub fn create_disk_images(kernel_binary_path: &Path) -> anyhow::Result<()> {
     fs::create_dir_all("./iso_root/")?;
-    for file in [
-        "./limine/limine-eltorito-efi.bin",
-        "./limine/limine-cd.bin",
-        "./limine/limine.sys",
-        "./limine.cfg",
+    for (file, dest) in [
+        ("./limine/BOOTX64.EFI", "EFI/BOOT"),
+        ("./limine/limine-uefi-cd.bin", ""),
+        ("./limine/limine-bios-cd.bin", ""),
+        ("./limine/limine-bios.sys", ""),
+        ("./limine.conf", ""),
     ]
     .iter()
-    .map(Path::new)
-    .chain([kernel_binary_path])
-    .map(Path::canonicalize)
+    .copied()
+    .map(|(x, y)| (Path::new(x), y))
+    .chain([(kernel_binary_path, "")])
+    .map(|(x, y)| (x.canonicalize(), y))
     {
         let file = file?;
-        io::copy(
-            &mut File::open(&file)?,
-            &mut File::create(format!(
+        let dest = if dest.is_empty() {
+            PathBuf::from(format!(
                 "./iso_root/{}",
                 file.file_name().unwrap().to_str().unwrap()
-            ))?,
+            )).to_owned()
+        } else {
+            Path::new("./iso_root").join(dest).join(file.file_name().unwrap().to_str().unwrap())
+        };
+        fs::create_dir_all(dest.parent().unwrap())?;
+        io::copy(
+            &mut File::open(&file)?,
+            &mut File::create(dest)?,
         )?;
     }
-    let image_path = kernel_binary_path.with_extension("iso");
+    /*let image_path = kernel_binary_path.with_extension("iso");
     Command::new("xorriso")
         .arg("-as")
         .arg("mkisofs")
         .arg("-b")
-        .arg("limine-cd.bin")
+        .arg("limine-bios-cd.bin")
         .arg("-no-emul-boot")
         .arg("-boot-load-size")
         .arg("4")
         .arg("-boot-info-table")
         .arg("--efi-boot")
-        .arg("limine-eltorito-efi.bin")
+        .arg("limine-uefi-cd.bin")
         .arg("-efi-boot-part")
         .arg("--efi-boot-image")
         .arg("--protective-msdos-label")
@@ -116,5 +131,6 @@ pub fn create_disk_images(kernel_binary_path: &Path) -> anyhow::Result<PathBuf> 
         .arg("./iso_root")
         .status()?
         .exit_ok()?;
-    Ok(image_path)
+    Ok(image_path)*/
+    Ok(())
 }

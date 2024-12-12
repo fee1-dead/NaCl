@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use stivale_boot::v2::StivaleStruct;
+use crate::sprintln;
 
 #[derive(Clone, Copy)]
 pub struct Mapper {
@@ -9,9 +9,9 @@ pub struct Mapper {
 
 impl Mapper {
     #[inline]
-    pub fn new(boot_info: &StivaleStruct) -> Self {
+    pub fn new(physical_memory_offset: usize) -> Self {
         Self {
-            physical_memory_offset: boot_info.vmap().unwrap().address as usize,
+            physical_memory_offset,
         }
     }
 
@@ -32,6 +32,7 @@ impl acpi::AcpiHandler for Mapper {
         physical_address: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
+        // sprintln!("p: {physical_address:x}, s: {size}");
         acpi::PhysicalMapping::new(
             physical_address,
             NonNull::new_unchecked((self.physical_memory_offset + physical_address) as *mut _),

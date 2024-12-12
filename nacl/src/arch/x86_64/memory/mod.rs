@@ -1,10 +1,12 @@
 pub mod allocator;
 pub mod mapper;
 
+use alloc::slice;
 use core::iter::{Filter, FlatMap, Map, StepBy};
 use core::ops::Range;
 
-use stivale_boot::v2::{StivaleMemoryMapEntry, StivaleMemoryMapEntryType, StivaleMemoryMapIter, StivaleMemoryMapTag};
+use limine::memory_map::{Entry, EntryType};
+
 use x86_64::structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB};
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -31,7 +33,7 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 /// # SAFETY
 ///
 /// the physical memory offset must be valid.
-pub unsafe fn init(physical_memory_offset: VirtAddr, memory_regions: &'static StivaleMemoryMapTag) {
+pub unsafe fn init(physical_memory_offset: VirtAddr, memory_regions: &'static [&'static Entry]) {
     let level_4_table = active_level_4_table(physical_memory_offset);
     let mut page_table = OffsetPageTable::new(level_4_table, physical_memory_offset);
     let mut frame_allocator = BootInfoFrameAllocator::init(memory_regions);
@@ -39,10 +41,13 @@ pub unsafe fn init(physical_memory_offset: VirtAddr, memory_regions: &'static St
         .expect("heap initialization failed");
 }
 
-type FilterFn = fn(&&StivaleMemoryMapEntry) -> bool;
-type FlatMapFn = fn(&StivaleMemoryMapEntry) -> StepBy<Range<u64>>;
+type FilterFn = fn(&&&Entry) -> bool;
+type FlatMapFn = fn(&&Entry) -> StepBy<Range<u64>>;
 type MapFn = fn(u64) -> PhysFrame;
-type UsableFrames = Map<FlatMap<Filter<StivaleMemoryMapIter<'static>, FilterFn>, StepBy<Range<u64>>, FlatMapFn>, MapFn>;
+type UsableFrames = Map<
+    FlatMap<Filter<slice::Iter<'static, &'static Entry>, FilterFn>, StepBy<Range<u64>>, FlatMapFn>,
+    MapFn,
+>;
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
@@ -50,29 +55,20 @@ pub struct BootInfoFrameAllocator {
 }
 
 impl BootInfoFrameAllocator {
-    fn usable_frames(regions: &'static StivaleMemoryMapTag) -> UsableFrames {
-        let f: FilterFn = |r| r.entry_type == StivaleMemoryMapEntryType::Usable;
-        let f2: FlatMapFn = |r| (r.base..r.end_address()).step_by(4096);
-        let f3: MapFn = |addr| PhysFrame::containing_address(PhysAddr::new(addr));
-        regions
-            .iter()
-            // find usable regions
-            .filter(f)
-            // map each region to its address range; and
-            // transform to an iterator of frame start address with alignment of 4KiB.
-            .flat_map(f2)
-            // create `PhysFrame` types from the start addresses.
-            .map(f3)
-    }
-
     /// Create a FrameAllocator from the passed memory map.
     ///
     /// This function is unsafe because the caller must guarantee that the passed
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
-    pub unsafe fn init(regions: &'static StivaleMemoryMapTag) -> Self {
+    pub unsafe fn init(regions: &'static [&'static Entry]) -> Self {
+        let f1: FilterFn = |x| x.entry_type == EntryType::USABLE;
+        let f2: FlatMapFn = |x| (x.base..x.base + x.length).step_by(4096);
         BootInfoFrameAllocator {
-            frames: Self::usable_frames(regions),
+            frames: regions
+                .iter()
+                .filter(f1)
+                .flat_map(f2)
+                .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr))),
         }
     }
 }
